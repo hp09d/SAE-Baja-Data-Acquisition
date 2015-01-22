@@ -3,23 +3,6 @@
  *
  *  Created on: Jan 14, 2015
  *      Author: Dewey Williams
- *
- *	Library for displaying data on an ILI9340-driven LCD display
- *	Written for the Texas Instruments TMS570LS0432 Safety CPU (ARM Cortex-R4)
- *
- *	Uses the multi-buffered SPI (mibSPI) interface to accelerate the drawing of
- *	large shapes and bitmaps;
- *		-	The interface should be configured in HalCoGen and the relevant 
- *			details entered below
- *		-	Default configuration: 	TG0 - 8 bit single word buffer
- *									TG1 - 16 bit 24 word buffer
- *		-	Clock polarity option must be ticked for all transfer groups
- *
- *	Adapted from the Adafruit_ILI9340 library for AVR microcontrollers and 
- *	optimized for mibSPI
- *
- *	Version: 0.1a
- *	Only supports drawing a rectangle and displaying a 565 encoded image (see frenchie.h for an example)
  */
 
 #ifndef ILI9340_H_
@@ -28,17 +11,12 @@
 #include "mibspi.h"
 #include "gio.h"
 
-/*
-*******USER CONFIGURATION BEGIN*******
-*/
 #define ILI9340_DC 6		//GPIO pins for display functions
 #define ILI9340_RST 7
+
 #define ILI9340_8BIT_TG 0				//mibSPI transfer group for transmitting 8 bit data
 #define ILI9340_16BIT_MULTI 1			//mibSPI transfer group for transmitting 16 bit data in bulk
 #define ILI9340_MULTI_SIZE 24		//Size of the 16bit transfer group's buffer (in 16bit words)
-/*
-********USER CONFIGURATION END********
-*/
 
 //Defines from the Adafruit library (might not need all of them)
 #define ILI9340_TFTWIDTH 320	//Display is rotated so height and width are flipped
@@ -100,5 +78,7 @@ void ili9340WriteData(uint16_t d);		//Write 8bit data (DC high)
 void ili9340DrawImage(uint16_t width, uint16_t height, const uint8_t * pixels);	//Draw a GIMP-exported image
 void ili9340FillRect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color);
 void ili9340SetAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);	//Set the draw area
+void ili9340DrawChar(uint16_t x, uint16_t y, uint8_t size, char c, uint16_t color);
+void ili9340Write(uint16_t x, uint16_t y, uint8_t size, char * s, uint16_t color);
 
 #endif /* ILI9340_H_ */

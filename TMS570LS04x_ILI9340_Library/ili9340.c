@@ -1,4 +1,5 @@
 #include "ili9340.h"
+#include "font-9x8.h"
 
 uint16_t ili9340CmdBuf[1];
 uint16_t ili9340PixBuf[ILI9340_MULTI_SIZE];
@@ -203,37 +204,57 @@ void ili9340WriteData(uint16_t d){
 void ili9340FillRect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color)
 {
 	int i;
-	int numPixels = width*height;
-
-	for(i=0; i < ILI9340_MULTI_SIZE; ++i)
-	{
-		ili9340PixBuf[i] = color;
+	int numPixels = (width)*(height);
+	if(numPixels == 0){
+		return;
 	}
 
-	ili9340SetAddrWindow(x,y,x+width,y+height);
-	mibspiSetData(mibspiREG1,ILI9340_16BIT_MULTI,ili9340PixBuf);
-	mibspiTransfer(mibspiREG1,ILI9340_16BIT_MULTI);
+	ili9340SetAddrWindow(x,y,x+width-1,y+height-1);
+	gioSetBit(gioPORTA, ILI9340_DC, 1);
+
+	if(numPixels < ILI9340_MULTI_SIZE)
+	{
+		for(i=0; i<numPixels; ++i){
+			ili9340WriteData(color>>8);
+			ili9340WriteData(color);
+		}
+		return;
+	}else{
+		for(i=0; i < ILI9340_MULTI_SIZE; ++i)
+		{
+			ili9340PixBuf[i] = color;
+		}
+		mibspiSetData(mibspiREG1,ILI9340_16BIT_MULTI,ili9340PixBuf);
+		mibspiTransfer(mibspiREG1,ILI9340_16BIT_MULTI);
+		numPixels -= ILI9340_MULTI_SIZE;
+		for(i=0;i<1000;++i){
+			//Not sure why this delay is needed, but it fixes a bug...
+		}
+	}
 
 	while(numPixels > 0)
 	{
 		if(numPixels >= ILI9340_MULTI_SIZE)
 		{
-			numPixels -= ILI9340_MULTI_SIZE;
 			while(!(mibspiIsTransferComplete(mibspiREG1,ILI9340_16BIT_MULTI)))
 			{
 
 			}
-			mibspiSetData(mibspiREG1,ILI9340_16BIT_MULTI,ili9340PixBuf);
 			mibspiTransfer(mibspiREG1,ILI9340_16BIT_MULTI);
+			numPixels -= ILI9340_MULTI_SIZE;
 		}else{
 			for(i=0;i<numPixels;++i)
 			{
 				ili9340WriteData(color>>8);		//Send last pixels one byte at a time
 				ili9340WriteData(color);
 			}
-			numPixels = 0;
+			return;
 		}
 	}
+
+	/*while(!(mibspiIsTransferComplete(mibspiREG1,ILI9340_8BIT_TG)))
+	{
+	}*/
 }
 
 void ili9340DrawImage(uint16_t width, uint16_t height, const uint8_t * pixels){
@@ -288,6 +309,11 @@ void ili9340DrawImage(uint16_t width, uint16_t height, const uint8_t * pixels){
 			numPixels = 0;
 		}
 	}
+
+	while(!(mibspiIsTransferComplete(mibspiREG1,ILI9340_16BIT_MULTI)))
+	{
+
+	}
 }
 
 void ili9340SetAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1){
@@ -302,4 +328,40 @@ void ili9340SetAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1){
 	ili9340WriteData(y1>>8);
 	ili9340WriteData(y1); // YEND
 	ili9340WriteCommand(ILI9340_RAMWR); // write to RAM
+}
+
+void ili9340DrawChar(uint16_t x, uint16_t y, uint8_t size, char c, uint16_t color){
+	uint8_t row,col;
+	uint16_t pix, mask, x0, y0, blob;
+	for(row = 0; row < 8; ++row)
+	{
+		pix = console_font_9x8[16*c + 2*row];
+		pix = pix<<8;
+		pix |= console_font_9x8[16*c + 2*row + 1];
+		mask = 0x8000;
+		for(col = 0; col < 9;){
+			if(pix & mask){
+				blob = 0;
+				x0 = x+col*size;
+				y0 = y+row*size;
+				while(pix & mask && col < 9){		//Find "blobs" in the row to optimize drawing
+					++blob;
+					mask = mask >> 1;
+					++col;
+				}
+				ili9340FillRect(x0, y0, blob*size, size, color);
+			}else{
+				++col;
+				mask = mask >> 1;
+			}
+		}
+	}
+}
+
+void ili9340Write(uint16_t x, uint16_t y, uint8_t size, char * s, uint16_t color){
+	while(*s != '\0'){
+		ili9340DrawChar(x,y,size,*s,color);
+		x += 9*size;
+		++s;
+	}
 }
