@@ -10,20 +10,20 @@ UCB Header:
 |1|VCC|3V3||
 |2|P1.6|UCB0SOMI|UCB0SCL|
 |3|P1.7|UCB0SIMO|UCB0SDA|
-|4|P1.5|UCB0CLK||
-|5|P1.6|UCB0STE||
+|4|P1.5|UCB0CLK|UCA0STE|
+|5|P1.6|UCB0STE|UCA0CLK|
 |6|VSS|GND||
 
 UCA/ANALOG Header:
 
 |Pin #|MSP430 Pin|Primary Function|Secondary Function|
 |-------|--------|----------------|------------------|
-|1|P1.0|A0
+|1|P1.0|A0||
 |2|VCC|3V3||
-|3|P1.6|UCB0SOMI|UCB0SCL|
-|4|P1.7|UCB0SIMO|UCB0SDA|
-|5|P1.5|UCB0CLK||
-|6|P1.6|UCB0STE||
+|3|P1.6|UCA0SOMI|UCB0SCL|
+|4|P1.7|UCA0SIMO|UCB0SDA|
+|5|P1.5|UCA0CLK|UCB0STE|
+|6|P1.6|UCA0STE|UCB0CLK|
 |7|VSS|GND||
 
 Note that UCA or analog must be selected internally. 
