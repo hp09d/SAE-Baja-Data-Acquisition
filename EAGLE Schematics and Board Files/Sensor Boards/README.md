@@ -1,6 +1,6 @@
 This board design is based around the MSP430G2553IN20. It includes a stabilizing RC pair on the reset pin, as well as an optional reset button and status LED.
 
-This board is used as a platform for building sensor modules for the Baja car. It breaks out power, ground, and both serial interfaces (UCA and UCB), as well as analog pins 0-2.
+This board is used as a platform for building sensor modules for the Baja car. It breaks out power, ground, and both serial interfaces (UCA and UCB), as well as analog pins 0-2, 4, and 5.
 The pinout of the UCB header matches with pins 2-7 of the UCA/ANALOG header for easily switching interfaces.
 
 UCB Header:
