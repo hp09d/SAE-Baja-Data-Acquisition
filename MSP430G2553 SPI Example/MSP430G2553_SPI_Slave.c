@@ -58,6 +58,4 @@ __interrupt void USCI0RX_ISR_HOOK (void)
 	while (!(IFG2 & UCB0TXIFG)) {};
 	UCB0TXBUF = SLV_data++;
 	__delay_cycles(50);		//change this to something way lower
-
- //   IE2 &= ~UCB0RXIFG;
 }
