@@ -67,21 +67,21 @@
 void main(void)
 {
 /* USER CODE BEGIN (3) */
-	spiInit();
+    spiInit();		//Initialize SPI
 
-	spiDAT1_t dataConfig1;
-    dataConfig1.CSNR = SPI_CS_1;
-    dataConfig1.CS_HOLD = 0;
-    dataConfig1.DFSEL = SPI_FMT_0;
-    dataConfig1.WDEL = 0;
+    spiDAT1_t dataConfig1;				//Set up our SPI configuration
+    dataConfig1.CSNR = SPI_CS_1;			//Using chip select #1 (mibSPI1CS[1])
+    dataConfig1.CS_HOLD = 0;				//Don't hold CS between transfers
+    dataConfig1.DFSEL = SPI_FMT_0;			//Select data format 0
+    dataConfig1.WDEL = 0;					//No extra delays
 
-    uint16_t src[2] = {0x9E,0x50};
-    uint16_t dst[2];
-    uint16_t pot = 0;
+    uint16_t src[2] = {0x9E,0x50};		//Dummy data to send to slave
+    uint16_t dst[2];					//Receive buffer
+    uint16_t pot = 0;					//Potentiometer value
 
     while(1){
-    	spiTransmitAndReceiveData(spiREG1, &dataConfig1,2,&src[0],&dst[0]);
-    	pot = (dst[0]<<8)+dst[1];
+    	spiTransmitAndReceiveData(spiREG1, &dataConfig1,2,&src[0],&dst[0]);		//Send and receive data
+    	pot = (dst[0]<<8)+dst[1];												//Rebuild pot value
     }
 /* USER CODE END */
 }
