@@ -124,7 +124,7 @@ uint16_t dataRead(uint32_t block, uint16_t offset, uint16_t count, uint16_t * de
 
 spiDAT1_t dataConfig1; 	//SPI configuration
 
-uint16_t dest[100];
+uint16_t dest[512];
 /* USER CODE END */
 
 void main(void)
@@ -211,18 +211,47 @@ void main(void)
 	 */
 
 	/*
-	 * BEGIN BLOCK READ
+	 * BEGIN PARTITION TABLE READ
 	 */
 
 	dataRead( 0, 0x1BE, 16, &dest[0] );	//Read the partition table
 
+	uint32_t part1_begin = dest[8] | (dest[9] << 8) | (dest[10] << 16) | (dest[11] << 24);
+	uint32_t part1_size = dest[12] | (dest[13] << 8) | (dest[14] << 16) | (dest[15] << 24);
+
 	/*
-	 * END BLOCK READ
+	 * END PARTITION TABLE READ
 	 */
 
-	uint32_t part1_begin = (dest[8] << 24) | (dest[9] << 16) | (dest[10] << 8) | dest[11];
-	uint32_t part1_size = (dest[12] << 24) | (dest[13] << 16) | (dest[14] << 8) | dest[15];
+	/*
+	 * 	BEGIN MBR READ
+	 */
 
+	if( dataRead( part1_begin, 0, 512, &dest[0]) ){
+		while(1){} //Read Error
+	}
+
+	uint16_t nRES = dest[0x0E] | (dest[0x0F] << 8);
+	uint16_t nFAT = dest[0x10];
+	uint32_t FAT_size = dest[0x24] | (dest[0x25] << 8) | (dest[0x26] << 16) | (dest[0x27] << 24);
+
+	/*
+	 * END MBR READ
+	 */
+
+	/*
+	 * BEGIN ROOT READ
+	 */
+
+	uint32_t FROOT = part1_begin + nRES + (nFAT*FAT_size);
+
+	if( dataRead( FROOT, 0, 512, &dest[0]) ){
+		while(1){} //Read Error
+	}
+
+	/*
+	 * END ROOT READ
+	 */
 	while(1)
 	{
 
@@ -276,6 +305,10 @@ uint16_t getByte(){
 uint16_t dataRead(uint32_t block, uint16_t offset, uint16_t count, uint16_t * dest){
 	uint16_t status = sendCmd(CMD17,block);
 	uint16_t i;
+
+	if( count + offset > 512 ){
+		return 1;		//Out of bounds
+	}
 
 	if( status != 0 ){
 		return 1; //Fail
