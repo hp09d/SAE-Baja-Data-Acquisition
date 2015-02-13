@@ -43,13 +43,6 @@ int main( void )
     	ADC10CTL1 = ADC10DIV_3 + INCH_0 + SHS_0 + CONSEQ_2 + ADC10SSEL_2;
 	ADC10CTL0 |= ENC + ADC10SC;
 
-	while (!(ADC10IFG & ADC10CTL0)) {}
-    	pot = ADC10MEM;
-    	sampleArray[ byteNum ] = ( pot >> 8 );
-    	byteNum = (++byteNum) % 4;
-    	sampleArray[ byteNum ] = ( pot & 0x00FF );
-    	byteNum = (++byteNum) % 4;
-
 	while ( 1 ) {
 		
 		ADC10CTL0 &= ~(ADC10SC);
