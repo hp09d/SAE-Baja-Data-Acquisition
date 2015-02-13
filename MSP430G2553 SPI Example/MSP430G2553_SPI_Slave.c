@@ -43,23 +43,23 @@ int main( void )
     	ADC10CTL1 = ADC10DIV_3 + INCH_0 + SHS_0 + CONSEQ_2 + ADC10SSEL_2;
 	ADC10CTL0 |= ENC + ADC10SC;
 
-while ( 1 ) {
-	ADC10CTL0 |= ENC + ADC10SC;
-	while( !(ADC10CTL0 & ADC10IFG) ) {};
-	pot = ADC10MEM;
-		
-	if ( betweenBytes == 0 ) {
-	        /*  !!!!!  BEGIN DANGER ZONE  !!!!!   */
-		sampleArray[ byteNum ] = ( pot >> 8 );
-		UCB0TXBUF = sampleArray[ byteNum ];
-		matchingLSB = byteNum + 1;
-		byteNum = (++byteNum) % 4;
-		sampleArray[ byteNum ] = ( pot & 0x00FF );
-		byteNum = (++byteNum) % 4;
-		/*  !!!!!  END DANGER ZONE   !!!!!   */
+	while ( 1 ) {
+		ADC10CTL0 |= ENC + ADC10SC;
+		while( !(ADC10CTL0 & ADC10IFG) ) {};
+		pot = ADC10MEM;
+			
+		if ( betweenBytes == 0 ) {
+		        /*  !!!!!  BEGIN DANGER ZONE  !!!!!   */
+			sampleArray[ byteNum ] = ( pot >> 8 );
+			UCB0TXBUF = sampleArray[ byteNum ];
+			matchingLSB = byteNum + 1;
+			byteNum = (++byteNum) % 4;
+			sampleArray[ byteNum ] = ( pot & 0x00FF );
+			byteNum = (++byteNum) % 4;
+			/*  !!!!!  END DANGER ZONE   !!!!!   */
+		}
+		ADC10CTL0 &= ~(ADC10SC);
 	}
-	ADC10CTL0 &= ~(ADC10SC);
-}
     while ( 1 );
     return ( 0 );
 }
