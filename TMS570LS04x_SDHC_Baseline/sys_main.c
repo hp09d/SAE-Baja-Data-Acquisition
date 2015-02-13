@@ -314,25 +314,21 @@ uint16_t dataRead(uint32_t block, uint16_t offset, uint16_t count, uint16_t * de
 		return 1; 		//Fail
 	}else{
 		status = 0xFF;
-		while(status == 0xFF)
-		{
+		while(status == 0xFF){
 			status = getByte();
 		}
-
 		if( status != DATA_START_BLOCK ){
 			return 1; 	//Fail
 		}
 	}
 
-	for( i = 0; i < offset; ++i){
+	for( i = 0; i < offset; ++i ){
 		getByte();			//Skip to the offset
 	}
-
 	for( i = 0; i< count; ++i ){
 		dest[i] = getByte();		//Read the data
 	}
-
-	for( i = count+offset; i < 512; ++i){
+	for( i = count+offset; i < 512; ++i ){
 		getByte(); 			//Throw away  the rest
 	}
 
