@@ -44,8 +44,6 @@ int main( void )
 	ADC10CTL0 |= ENC + ADC10SC;
 
 	while ( 1 ) {
-		
-		ADC10CTL0 &= ~(ADC10SC);
 		ADC10CTL0 |= ENC + ADC10SC;
 		while( !(ADC10CTL0 & ADC10IFG) ) {};
 		pot = ADC10MEM;
@@ -60,6 +58,7 @@ int main( void )
 			byteNum = (++byteNum) % 4;
 			/*  !!!!!  END DANGER ZONE   !!!!!   */
 		}
+		ADC10CTL0 &= ~(ADC10SC);
 	}
     while ( 1 );
     return ( 0 );
