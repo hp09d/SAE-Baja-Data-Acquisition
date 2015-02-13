@@ -311,7 +311,7 @@ uint16_t dataRead(uint32_t block, uint16_t offset, uint16_t count, uint16_t * de
 	}
 
 	if( status != 0 ){
-		return 1; //Fail
+		return 1; 		//Fail
 	}else{
 		status = 0xFF;
 		while(status == 0xFF)
@@ -320,13 +320,12 @@ uint16_t dataRead(uint32_t block, uint16_t offset, uint16_t count, uint16_t * de
 		}
 
 		if( status != DATA_START_BLOCK ){
-			return 1; //Fail
+			return 1; 	//Fail
 		}
 	}
 
-	for( i = 0; i < offset; ++i)
-	{
-		getByte();		//Skip to the offset
+	for( i = 0; i < offset; ++i){
+		getByte();			//Skip to the offset
 	}
 
 	for( i = 0; i< count; ++i ){
@@ -334,7 +333,7 @@ uint16_t dataRead(uint32_t block, uint16_t offset, uint16_t count, uint16_t * de
 	}
 
 	for( i = count+offset; i < 512; ++i){
-		getByte(); //throw away  the rest
+		getByte(); 			//Throw away  the rest
 	}
 
 	return 0;
