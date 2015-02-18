@@ -72,21 +72,38 @@ void main(void)
 
 	sciInit();
 
-	sciSend(scilinRED, 21, (unsigned char *) "Please press a key! \r\n");
+	sciSend(scilinREG, 21, (unsigned char *) "Please press a key! \r\n");
 
-	sciReceive(scilinRED, 1, (unsigned char *)&command);
+	sciReceive(scilinREG, 1, (unsigned char *)&command);
 
 	while(1);
 /* USER CODE END */
 }
 
 /* USER CODE BEGIN (4) */
-void sciNotification(sciBase_t *sci, unsigned flags)
+void sciNotification(sciBASE_t *sci, unsigned flags)
 {
-sciSend(sci, 1, (unsigned char *)&command);
+	//TO DO: Adjust for length of whatever data is coming through??
+	//Send out "Random Data"
+sciSend(scilinREG, 21, (unsigned char *)&command);
 
-sciReceive(sci, 1, (unsigned char *)&command);
+	//Wait for another 10 char to be received
+//Not show how to show received message from XBee. Communication has been confirmed,
+//not sure if its important.
+sciReceive(scilinREG, 1, (unsigned char *)&command); //How to receive from XBee?
+if(command == 'h')
+{sciSend(scilinREG, 21, (unsigned char *)"I'm Coming In!\n");}
 }
+
+//Error signalling module interrupts
+void esmGroup1Notification(int bit)
+{
+	return;
+}
+
+void esmGroup2Notification(int bit)
+{
+	return;
 }
 
 
