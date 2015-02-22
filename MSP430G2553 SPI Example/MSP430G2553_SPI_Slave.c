@@ -12,7 +12,6 @@
 
 void SPI_Init( void )
 {
-	WDTCTL = WDTPW | WDTHOLD;
 	P1SEL |= BIT0 | BIT4 | BIT5 | BIT6 | BIT7;
 	P1SEL2 |= BIT4 | BIT5 | BIT6 | BIT7;
 
@@ -35,6 +34,7 @@ char matchingLSB;
 
 int main( void )
 {
+	WDTCTL = WDTPW | WDTHOLD;
 	SPI_Init();
 	P1SEL |= BIT0;							//Enable A/D Channel A0 (P1.0)
 
