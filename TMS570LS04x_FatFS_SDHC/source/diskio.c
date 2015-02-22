@@ -148,21 +148,22 @@ uint16_t xmit_block(const uint8_t * buf){
 	uint16_t xmit = 0;
 	uint16_t i;
 
-	while(rcv != 0xFF){
+	/*while(rcv != 0xFF){
 		rcv = getByte();
-	}
+	}*/
 
 	for(i = 0; i < 512; ++i){
 		xmit = *(buf++);
 		spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);
 	}
 
-	for(i = 0; i< 2; ++i){
-		getByte();		//Dummy CRC
+	for(i = 2; i > 0; --i){
+		getByte();			//Dummy CRC
 	}
 
 	rcv = getByte();
-	if( (rcv & 0x1F) != 0x05 ){
+
+	if( (rcv & DATA_RES_MASK) != DATA_RES_ACCEPTED ){
 		return 1;
 	}
 
@@ -181,7 +182,7 @@ DSTATUS disk_status (
 	BYTE pdrv		/* Physical drive nmuber to identify the drive */
 )
 {
-	return 0;
+	return RES_OK;
 }
 
 
@@ -340,7 +341,7 @@ DRESULT disk_write (
 	uint16_t xmit;
 
 	if(count > 1){
-		sendCmd(ACMD23,count);
+		sendAcmd(ACMD23,count);
 		status = sendCmd(CMD25,sector);
 		if(status != 0){
 			return RES_ERROR;
@@ -359,12 +360,14 @@ DRESULT disk_write (
 		status = sendCmd(CMD24,sector);
 		if(status == 0){
 			xmit = DATA_START_BLOCK;
+			while(status != 0xFF){
+				status = getByte();
+			}
 			spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);
-			if( xmit_block(buff) ){
+			if( !xmit_block(buff) ){
 				count = 0;
 			}
 		}
-
 	}
 
 	if(count == 0){
@@ -387,9 +390,6 @@ DRESULT disk_ioctl (
 	void *buff		/* Buffer to send/receive control data */
 )
 {
-	DRESULT res;
-	int result;
-
-	return RES_PARERR;
+	return RES_OK;
 }
 #endif
