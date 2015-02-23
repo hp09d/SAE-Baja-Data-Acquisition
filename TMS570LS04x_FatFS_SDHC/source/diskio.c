@@ -9,7 +9,14 @@
 
 #include "diskio.h"		/* FatFs lower layer API */
 #include "gio.h"
-#include "spi.h"
+#include "mibspi.h"
+
+#define TG_1BYTE 2
+#define TG_6BYTE 3
+#define TG_64BYTE 4
+#define TG_DUMMYBYTES 5
+
+#define getByte() sendByte(0xFF)
 
 /** GO_IDLE_STATE - init card in spi mode if CS low */
 #define CMD0 0X00
@@ -67,20 +74,23 @@
 #define DATA_RES_ACCEPTED 0X05
 //------------------------------------------------------------------------------
 
-spiDAT1_t dataConfig1;
+//spiDAT1_t dataConfig1;
 
-uint16_t getByte(){
-	uint16_t src = 0xFF;
-	uint16_t dst = 0;
+uint16_t sendByte(uint16_t src){
+	uint16_t dst;
 
-	spiTransmitAndReceiveData(spiREG1, &dataConfig1, 1, &src, &dst);
+	mibspiSetData(mibspiREG1, TG_1BYTE, &src);
+	mibspiTransfer(mibspiREG1, TG_1BYTE);
+	while(!mibspiIsTransferComplete(mibspiREG1, TG_1BYTE));
+	mibspiGetData(mibspiREG1, TG_1BYTE, &dst);
+
 	return dst;
 }
 
 uint16_t sendCmd(uint8_t cmd, uint32_t arg){
 	uint16_t i = 0;
-	uint16_t src[5];
-	uint16_t out[5];
+	uint16_t src[6];
+	//uint16_t out[5];
 
 	while(getByte() != 0xFF){
 		//Wait for ready
@@ -93,12 +103,16 @@ uint16_t sendCmd(uint8_t cmd, uint32_t arg){
 	}
 
 	uint16_t resp = 0x80; //Init to some invalid response
-	uint16_t crc = 0xFF;
-	if (cmd == CMD0) crc = 0X95;  // correct crc for CMD0 with arg 0
-	if (cmd == CMD8) crc = 0X87;  // correct crc for CMD8 with arg 0X1AA
+	src[5] = 0xFF;
+	if (cmd == CMD0) src[5] = 0X95;  // correct crc for CMD0 with arg 0
+	if (cmd == CMD8) src[5] = 0X87;  // correct crc for CMD8 with arg 0X1AA
 
-	spiTransmitAndReceiveData(spiREG1, &dataConfig1, 5, &src[0], &out[0]); //send cmd and arg
-	spiTransmitAndReceiveData(spiREG1, &dataConfig1, 1, &crc, &resp); //send CRC
+	//spiTransmitAndReceiveData(spiREG1, &dataConfig1, 5, &src[0], &out[0]); //send cmd and arg
+	//spiTransmitAndReceiveData(spiREG1, &dataConfig1, 1, &crc, &resp); //send CRC
+
+	mibspiSetData(mibspiREG1, TG_6BYTE, &src[0]);
+	mibspiTransfer(mibspiREG1, TG_6BYTE);
+	while( !mibspiIsTransferComplete(mibspiREG1,TG_6BYTE) );
 
 	for(i = 0; i < 0xFFFF; ++i){
 		if( !(resp & 0x80) ){
@@ -116,9 +130,10 @@ uint16_t sendAcmd(uint8_t acmd, uint32_t arg){
 	return sendCmd(acmd,arg);
 }
 
-uint16_t rcv_block(uint8_t *buff){
+uint16_t rcv_block(uint8_t *buf){
 	uint8_t rcv = 0xFF;
-	uint16_t timer,i;
+	uint16_t timer,i,j;
+	uint16_t somi[64];
 
 	for(timer = 10000; timer > 0; --timer){
 		rcv = getByte();
@@ -131,9 +146,24 @@ uint16_t rcv_block(uint8_t *buff){
 		return 1;
 	}
 
-	for( i = 512; i != 0; --i ){
+	/*for( i = 512; i != 0; --i ){
 		rcv = getByte() & 0xFF;
 		*(buff++) = rcv;
+	}*/
+
+	for( i = 64; i > 0; --i ){
+		somi[i-1] = 0xFF;
+	}
+
+	mibspiSetData(mibspiREG1, TG_64BYTE, &somi[0]);
+
+	for( i = 0; i < 8; ++i ){
+		mibspiTransfer(mibspiREG1, TG_64BYTE);
+		while( !mibspiIsTransferComplete(mibspiREG1, TG_64BYTE) );
+		mibspiGetData(mibspiREG1, TG_64BYTE, &somi[0]);
+		for( j = 0; j < 64; ++j ){
+			buf[64*i + j] = somi[j];
+		}
 	}
 
 	for( i = 2; i != 0; --i ){
@@ -145,16 +175,26 @@ uint16_t rcv_block(uint8_t *buff){
 
 uint16_t xmit_block(const uint8_t * buf){
 	uint16_t rcv = 0;
-	uint16_t xmit = 0;
-	uint16_t i;
+	//uint16_t xmit = 0;
+	uint16_t i,j;
+	uint16_t buf64[64];
 
 	/*while(rcv != 0xFF){
 		rcv = getByte();
 	}*/
 
-	for(i = 0; i < 512; ++i){
+	/*for(i = 0; i < 512; ++i){
 		xmit = *(buf++);
 		spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);
+	}*/
+
+	for( i = 0; i < 8; ++i ){
+		for( j = 0; j < 64; ++j ){
+			buf64[j] = buf[64*i+j];
+		}
+		mibspiSetData(mibspiREG1, TG_64BYTE, &buf64[0]);
+		mibspiTransfer(mibspiREG1, TG_64BYTE);
+		while( !mibspiIsTransferComplete(mibspiREG1, TG_64BYTE) );
 	}
 
 	for(i = 2; i > 0; --i){
@@ -195,38 +235,42 @@ DSTATUS disk_initialize (
 	BYTE pdrv				/* Physical drive nmuber to identify the drive */
 )
 {
-	spiInit();
-	gioInit();
-	dataConfig1.CSNR = SPI_CS_1;		//Using chip select #1 (mibSPI1CS[1])
+	mibspiInit();
+	//gioInit();
+	/*dataConfig1.CSNR = SPI_CS_1;		//Using chip select #1 (mibSPI1CS[1])
 	dataConfig1.CS_HOLD = 1; 			//Hold CS between transfers
 	dataConfig1.DFSEL = SPI_FMT_0;		//Select data format 0
 	dataConfig1.WDEL = 0;				//No extra delays
 	gioPORTA->DIR &= 0xFFFE;		//GIOA[0] is chip detect
-	gioPORTA->DIR |= 0x0002;		//GIOA[1] is chip select
+	gioPORTA->DIR |= 0x0002;		//GIOA[1] is chip select*/
 
 	uint32_t i = 0;
 
-	while( !( gioPORTA->DIN & 0x01 ) )
+	/*while( !( gioPORTA->DIN & 0x01 ) )
 	{
 		//return STA_NOINIT;
 	}
-	for(i=0;i<0x00FFFFFF;++i){}  //Wait
+	for(i=0;i<0x00FFFFFF;++i){}  //Wait*/
 
 	/*
 	 * BEGIN SD CARD INITIALIZATION
 	 */
 
 	//Send 80 cycles with SIMO and CS high
-	uint16_t cmd[5] = {0xFF,0,0,0,0};
-	dataConfig1.CSNR = 0xFF;
+	uint16_t cmd[10] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+	/*dataConfig1.CSNR = 0xFF;
 	gioPORTA->DOUT |= 0x0002;
 	for( i = 0; i < 11; ++i){
 		spiTransmitData(spiREG1, &dataConfig1, 1, &cmd[0]);
-	}
+	}*/
 
-	dataConfig1.CSNR = SPI_CS_1;
+	mibspiSetData(mibspiREG1, TG_DUMMYBYTES, &cmd[0]);
+	mibspiTransfer(mibspiREG1,TG_DUMMYBYTES);
+	while( !mibspiIsTransferComplete(mibspiREG1,TG_DUMMYBYTES) );
+
+	/*dataConfig1.CSNR = SPI_CS_1;
 	gioPORTA->DOUT &= 0xFFFD; //CS Low
-	spiTransmitData(spiREG1, &dataConfig1, 1, &cmd[0]); //Send an FF just cause
+	spiTransmitData(spiREG1, &dataConfig1, 1, &cmd[0]); //Send an FF just cause*/
 	uint16_t status;
 
 	status = sendCmd(CMD0,0);
@@ -338,7 +382,7 @@ DRESULT disk_write (
 )
 {
 	uint16_t status;
-	uint16_t xmit;
+	//uint16_t xmit;
 
 	if(count > 1){
 		sendAcmd(ACMD23,count);
@@ -346,24 +390,30 @@ DRESULT disk_write (
 		if(status != 0){
 			return RES_ERROR;
 		}
-		xmit = WRITE_MULTIPLE_TOKEN;
-		spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);
+		while(status != 0xFF){
+			status = getByte();
+		}
+		/*xmit = WRITE_MULTIPLE_TOKEN;
+		spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);*/
+		sendByte(WRITE_MULTIPLE_TOKEN);
 		while(count--){
 			if( xmit_block(buff) ){
 				break;
 			}
 			buff += 512;
 		}
-		xmit = STOP_TRAN_TOKEN;
-		spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);
+		/*xmit = STOP_TRAN_TOKEN;
+		spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);*/
+		sendByte(STOP_TRAN_TOKEN);
 	}else{
 		status = sendCmd(CMD24,sector);
 		if(status == 0){
-			xmit = DATA_START_BLOCK;
+			//xmit = DATA_START_BLOCK;
 			while(status != 0xFF){
 				status = getByte();
 			}
-			spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);
+			//spiTransmitData(spiREG1, &dataConfig1, 1, &xmit);
+			sendByte(DATA_START_BLOCK);
 			if( !xmit_block(buff) ){
 				count = 0;
 			}
