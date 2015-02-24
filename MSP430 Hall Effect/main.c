@@ -32,7 +32,21 @@ char sampleArray[4];
 char betweenBytes = 0;
 char matchingLSB;
 int num = 0;
+int timertimeytime = 0;
+int RPM;
 /* ====================================== */
+int cyclespersec = 12000; //@ 12kHz it takes 12000 cycles for one second
+	int end_time_value = 0;		//temp variable
+int calculate_time() //Calculate the RPM value using timertimeytime
+{
+
+	//First convert to seconds
+	end_time_value = timertimeytime/cyclespersec;	//seconds/rotation
+
+	end_time_value = 60/end_time_value;				//Rotations/Min
+	return end_time_value;
+}
+
 
 int main( void )
 {
@@ -41,21 +55,35 @@ int main( void )
 	P1SEL |= BIT0;							//Enable A/D Channel A0 (P1.0)
 
 	ADC10CTL0 &= ~ENC;
-	ADC10CTL0 = SREF_1 + ADC10SHT_3 + REF2_5V + REFON + ADC10IE + ADC10ON;
+	ADC10CTL0 = SREF_1 + ADC10SHT_3 + REF2_5V + REFON + ADC10ON;
     	ADC10CTL1 = ADC10DIV_3 + INCH_0 + SHS_0 + CONSEQ_2 + ADC10SSEL_2;
-	//ADC10CTL0 |= ENC + ADC10SC;
+
+
+    //Initialize Timer0_A
+    TA0CCR0 = 62500;					//TO DO: Change this to the 16-bit value
+    TA0CTL = TASSEL_1 + ID_3 + MC_1; 	//ACLK @ 12kHZ and sets up count mode
+
 
 	while ( 1 ) {
-		//__delay_cycles(15000);
-		ADC10CTL0 |= ENC + ADC10SC;
-		while( !(ADC10CTL0 & ADC10IFG) ) {};
 
+
+		//ADC10CTL0 |= ADC10IFG;
+		//ADC10CTL0 |= ADC10IFG;
+		//while( !(ADC10CTL0 & ADC10IFG) ) {};
+		ADC10CTL0 |= ENC + ADC10SC;
 		pot = ADC10MEM;
 
 		//Rotation count. Increments one per rotation regardless of clock cycle speed
-		if(pot >= 700){
-				num++;
-				while(ADC10MEM >= 600)
+		if(pot >= 600){			//If magnet has passed increment rotation count
+		num++;
+		if(num == 1){			//If its first pass reset timer
+			TA0R = 0;}
+		else{					//If its second pass record value on the timer register
+		timertimeytime = TA0R;
+		RPM = calculate_time();		//Calculate time in seconds
+		num = 0;}								//Reset magnet pass count
+
+			while(ADC10MEM >= 600)				//Hold code until magnet pass complete
 				{
 					ADC10CTL0 &= ~(ADC10SC);
 					ADC10CTL0 |= ENC + ADC10SC;
@@ -88,3 +116,9 @@ __interrupt void USCI0RX_ISR_HOOK (void)
 	UCB0TXBUF = sampleArray[ matchingLSB ];
 	__delay_cycles(50);
 }*/
+//#pragma vector = ADC10_VECTOR
+//__interrupt void ADC10_ISR(void)
+//{
+ //TAoR = 0;
+//}
+
