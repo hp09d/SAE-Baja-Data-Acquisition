@@ -32,16 +32,16 @@ char sampleArray[4];
 char betweenBytes = 0;
 char matchingLSB;
 int num = 0;
-int timertimeytime = 0;
-int RPM;
+unsigned int timertimeytime = 0;
+double RPM;
 /* ====================================== */
 int cyclespersec = 12000; //@ 12kHz it takes 12000 cycles for one second
-	int end_time_value = 0;		//temp variable
-int calculate_time() //Calculate the RPM value using timertimeytime
+	double end_time_value = 0;		//temp variable
+double calculate_time() //Calculate the RPM value using timertimeytime
 {
 
 	//First convert to seconds
-	end_time_value = timertimeytime/cyclespersec;	//seconds/rotation
+	end_time_value = (double)timertimeytime/(double)cyclespersec;	//seconds/rotation
 
 	end_time_value = 60/end_time_value;				//Rotations/Min
 	return end_time_value;
@@ -60,8 +60,9 @@ int main( void )
 
 
     //Initialize Timer0_A
-    TA0CCR0 = 62500;					//TO DO: Change this to the 16-bit value
-    TA0CTL = TASSEL_1 + ID_3 + MC_1; 	//ACLK @ 12kHZ and sets up count mode
+    TA0CCR0 = 65535;					//TO DO: Change the timer to be able to count beyond 5 seconds
+    									//maybe do tops 30 seconds and anything beyond that gets an automatic 1 RPM?
+    TA0CTL = TASSEL_1 + MC_1; 	//ACLK @ 12kHZ and sets up count mode
 
 
 	while ( 1 ) {
@@ -74,20 +75,22 @@ int main( void )
 		pot = ADC10MEM;
 
 		//Rotation count. Increments one per rotation regardless of clock cycle speed
-		if(pot >= 600){			//If magnet has passed increment rotation count
+		if(pot >= 450){			//If magnet has passed increment rotation count
 		num++;
+
 		if(num == 1){			//If its first pass reset timer
 			TA0R = 0;}
 		else{					//If its second pass record value on the timer register
 		timertimeytime = TA0R;
 		RPM = calculate_time();		//Calculate time in seconds
 		num = 0;}								//Reset magnet pass count
+		while(!(pot <= 417 ))				//Hold code until magnet pass complete
+								{
+									ADC10CTL0 &= ~(ADC10SC);
+									ADC10CTL0 |= ENC + ADC10SC;
+									pot = ADC10MEM;
+								}
 
-			while(ADC10MEM >= 600)				//Hold code until magnet pass complete
-				{
-					ADC10CTL0 &= ~(ADC10SC);
-					ADC10CTL0 |= ENC + ADC10SC;
-				}
 		}
 		if ( betweenBytes == 0 ) {
 		        /*  !!!!!  BEGIN DANGER ZONE  !!!!!   */
