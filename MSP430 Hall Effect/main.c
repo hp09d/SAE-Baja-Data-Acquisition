@@ -3,6 +3,7 @@
  */
 #include <msp430g2553.h>
 #include <stdio.h>
+#include <math.h>
 /*
  * ======== Grace related declaration ========
  */
@@ -25,15 +26,16 @@ void SPI_Init( void )
 
 /* Global data declaration/initialization */
 unsigned char SLV_data = 0x00;
-unsigned int pot;
+unsigned int ADCconverted;
 unsigned char data;
 int byteNum = 0;
-char sampleArray[4];
+//char sampleArray[4];
 char betweenBytes = 0;
 char matchingLSB;
 int num = 0;
 unsigned int timertimeytime = 0;
 double RPM;
+unsigned char Const = 0x03;
 /* ====================================== */
 int cyclespersec = 12000; //@ 12kHz it takes 12000 cycles for one second
 	double end_time_value = 0;		//temp variable
@@ -44,6 +46,8 @@ double calculate_time() //Calculate the RPM value using timertimeytime
 	end_time_value = (double)timertimeytime/(double)cyclespersec;	//seconds/rotation
 
 	end_time_value = 60/end_time_value;				//Rotations/Min
+
+	end_time_value = round(end_time_value);
 	return end_time_value;
 }
 
@@ -51,7 +55,7 @@ double calculate_time() //Calculate the RPM value using timertimeytime
 int main( void )
 {
 	WDTCTL = WDTPW | WDTHOLD;
-	//SPI_Init();
+	SPI_Init();
 	P1SEL |= BIT0;							//Enable A/D Channel A0 (P1.0)
 
 	ADC10CTL0 &= ~ENC;
@@ -72,23 +76,23 @@ int main( void )
 		//ADC10CTL0 |= ADC10IFG;
 		//while( !(ADC10CTL0 & ADC10IFG) ) {};
 		ADC10CTL0 |= ENC + ADC10SC;
-		pot = ADC10MEM;
+		ADCconverted = ADC10MEM;
 
 		//Rotation count. Increments one per rotation regardless of clock cycle speed
-		if(pot >= 450){			//If magnet has passed increment rotation count
+		if(ADCconverted >= 450){			//If magnet has passed increment rotation count
 		num++;
 
 		if(num == 1){			//If its first pass reset timer
 			TA0R = 0;}
 		else{					//If its second pass record value on the timer register
 		timertimeytime = TA0R;
-		RPM = calculate_time();		//Calculate time in seconds
+		RPM = (int)calculate_time();		//Calculate time in seconds
 		num = 0;}								//Reset magnet pass count
-		while(!(pot <= 417 ))				//Hold code until magnet pass complete
+		while(!(ADCconverted <= 417 ))				//Hold code until magnet pass complete
 								{
 									ADC10CTL0 &= ~(ADC10SC);
 									ADC10CTL0 |= ENC + ADC10SC;
-									pot = ADC10MEM;
+									ADCconverted = ADC10MEM;
 								}
 
 		}
@@ -109,16 +113,16 @@ int main( void )
     return ( 0 );
 }
 
-/*#pragma vector=USCIAB0RX_VECTOR
+#pragma vector=USCIAB0RX_VECTOR
 __interrupt void USCI0RX_ISR_HOOK (void)
 {
 	betweenBytes ^= 1;			//flip the bit
 	while (!(IFG2 & UCB0RXIFG)) {};
 	data = UCB0RXBUF;
 	while (!(IFG2 & UCB0TXIFG)) {};
-	UCB0TXBUF = sampleArray[ matchingLSB ];
+	UCB0TXBUF = Const;
 	__delay_cycles(50);
-}*/
+}
 //#pragma vector = ADC10_VECTOR
 //__interrupt void ADC10_ISR(void)
 //{
