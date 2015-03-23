@@ -1,0 +1,1 @@
+"./I2C_SoftwareLibrary.obj" "./dtostrf.obj" "./lsm303.obj" "./main.obj" "./wiring_digital.obj" "../lnk_msp430g2553.cmd" -l"libc.a" 
