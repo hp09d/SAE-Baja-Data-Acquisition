@@ -1,14 +1,14 @@
 /** @file sys_main.c 
 *   @brief Application main file
-*   @date 17.Nov.2014
-*   @version 04.02.00
+*   @date 16.Feb.2015
+*   @version 04.03.00
 *
 *   This file contains an empty main function,
 *   which can be used for the application.
 */
 
 /* 
-* Copyright (C) 2009-2014 Texas Instruments Incorporated - http://www.ti.com/ 
+* Copyright (C) 2009-2015 Texas Instruments Incorporated - www.ti.com 
 * 
 * 
 *  Redistribution and use in source and binary forms, with or without 
@@ -52,8 +52,11 @@
 /* USER CODE BEGIN (1) */
 #include "sci.h"
 #include "rti.h"
-#include "ili9340.h"
 #include "spi.h"
+#include "pinmux.h"
+#include "gio.h"
+
+#include "ili9340.h"
 #include "ff.h"
 #include "stdio.h"
 /* USER CODE END */
@@ -72,6 +75,9 @@ uint8_t sciTX[5] = {0xBA,0xDA,0x55,0,0};
 char potStr[3];
 uint8_t sciBuffer;
 uint8_t gotPreamble = 0;
+uint8_t dispErr
+= 0;
+uint8_t clrErr = 0;
 
 uint8_t getPreamble(uint8_t val);
 
@@ -86,6 +92,7 @@ void main(void)
 	sciInit();
 	spiInit();
 	rtiInit();
+	gioInit();
 	ili9340Init();
 	ili9340FillRect(0,0,320,240,0xFFFF);
 
@@ -107,10 +114,19 @@ void main(void)
     dataConfig1.DFSEL = SPI_FMT_0;
     dataConfig1.WDEL = 0;
 
+    spiDAT1_t dataConfig2;
+	dataConfig2.CSNR = SPI_CS_3;
+	dataConfig2.CS_HOLD = 0;
+	dataConfig2.DFSEL = SPI_FMT_0;
+	dataConfig2.WDEL = 0;
+
+	gioPORTA->DIR |= (1 << 3);
+	gioPORTA->DOUT |= (1 << 3);
+
     uint16_t src = 0xFF;
 	uint16_t accel = 0;
 	uint16_t pot = 0;
-	uint16_t i = 0;
+	int i = 0;
 
 	if(RES != FR_OK){
 		ili9340Write(10,10,2,(uint8_t *) "FS Mount Error",0xF800);
@@ -130,22 +146,31 @@ void main(void)
 		//sciReceive(scilinREG,1,&sciBuffer);
 		spiTransmitAndReceiveData(spiREG2, &dataConfig1, 1, &src, &accel);
 		drawProgress(accel);
-		_disable_IRQ();
+		rtiDisableNotification(rtiNOTIFICATION_COMPARE0);
 		sciTX[3] = accel;
-		dataConfig1.CSNR = SPI_CS_2;
-		for( i = 0; i < 65535; ++i ){
-
+		if( clrErr ){
+			ili9340FillRect(83,184,163,38,0x07E0);
+			clrErr = 0;
 		}
-		spiTransmitAndReceiveData(spiREG2, &dataConfig1, 1, &src, &pot);
+		/*for( i = 0; i < 100; ++i ){
+
+		}*/
+		gioPORTA->DOUT &= ~(1 << 3);
+		spiTransmitAndReceiveData(spiREG2, &dataConfig2, 1, &src, &pot);
+		gioPORTA->DOUT |= (1 << 3);
 		pot = (pot*99)/255;
 		sciTX[4] = pot;
-		_enable_IRQ();
-		sprintf(&potStr[0],"%d",pot);
+		rtiEnableNotification(rtiNOTIFICATION_COMPARE0);
+		sprintf(&potStr[0],"%2d",pot);
 		ili9340WriteFill(75,45,13,&potStr[0],0xFFFF,0x528A);
-		dataConfig1.CSNR = SPI_CS_0;
-		for( i = 0; i < 65535; ++i ){
-
+		if( dispErr ){
+			ili9340FillRect(83,184,163,38,0xF800);
+			ili9340Write(100,192,3,(char *) "Error",0xFFFF);
+			dispErr = 0;
 		}
+		/*for( i = 0; i < 100000; ++i ){
+
+		}*/
 	}
 /* USER CODE END */
 }
@@ -163,14 +188,9 @@ void sciNotification(sciBASE_t *sci, uint32 flags){
 
 			if( bytectr >= 2 ){
 				if( buf[0] == 'e'  && buf[1] == 'r' ){
-					if( !ili9340IsBusy() ){
-						ili9340FillRect(83,184,163,38,0xF800);
-						ili9340Write(100,192,3,(char *) "Error",0xFFFF);
-					}
+					dispErr = 1;
 				}else if( buf[0] == 'c' && buf[1] == 'l' ){
-					if( !ili9340IsBusy() ){
-						ili9340FillRect(83,184,163,38,0x07E0);
-					}
+					clrErr = 1;
 				}else{
 					//Not recognized
 				}
@@ -179,6 +199,7 @@ void sciNotification(sciBASE_t *sci, uint32 flags){
 				bytectr = 0;
 			}
 		}
+		sciReceive(scilinREG,1,&sciBuffer);
 		return;
 	}else if(flags & SCI_TX_INT){
 		return;
@@ -227,20 +248,28 @@ uint8_t getPreamble(uint8_t val){
 
 void drawProgress(uint8_t new){
 	static uint8_t old = 0;
-	static uint8_t y0_old = 0;
 	uint16_t height;
 	uint16_t y0;
 
 	if(new > old){
 		//Draw Yellow
-		y0 = 188-(new*177)/255;
-		height = (177*(new-old))/255;
-		ili9340FillRect(12,y0-1,31,height+1,0xFF70);
+		y0 = 188-((new*177)/255);
+		height = (178*(new-old))/255;
+		if( y0+height > 188){
+			height = 188-y0;
+		}
+		ili9340FillRect(12,y0,31,height+1,0xFF70);
 	}else{
 		//Draw Black
-		y0 = 188-(old*177)/255;
-		height = (177*(old-new))/255;
-		ili9340FillRect(12,y0-1,31,height+1,0x0000);
+		y0 = 186-((old*177)/255);
+		if( y0 < 11 ){
+			y0 = 11;
+		}
+		height = 1+(178*(old-new))/255;
+		if( y0+height > 188){
+			height = 188-y0;
+		}
+		ili9340FillRect(12,y0,31,height,0x0000);
 	}
 
 	if( height != 0 ){
