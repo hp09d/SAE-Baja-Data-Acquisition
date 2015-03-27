@@ -35,6 +35,7 @@ char matchingLSB;
 int num = 0;
 unsigned int timertimeytime = 0;
 double RPM;
+unsigned int numPulses = 0;
 unsigned char Const = 0x03;
 /* ====================================== */
 int cyclespersec = 12000; //@ 12kHz it takes 12000 cycles for one second
@@ -57,10 +58,9 @@ int main( void )
 	WDTCTL = WDTPW | WDTHOLD;
 	SPI_Init();
 	P1SEL |= BIT0;							//Enable A/D Channel A0 (P1.0)
-
 	ADC10CTL0 &= ~ENC;
-	ADC10CTL0 = SREF_1 + ADC10SHT_3 + REF2_5V + REFON + ADC10ON;
-    	ADC10CTL1 = ADC10DIV_3 + INCH_0 + SHS_0 + CONSEQ_2 + ADC10SSEL_2;
+	ADC10CTL0 = SREF_1 + REF2_5V + REFON + ADC10ON;
+    ADC10CTL1 = ADC10DIV_3 + INCH_0 + SHS_0 + CONSEQ_2 + ADC10SSEL_2;
 
 
     //Initialize Timer0_A
@@ -79,34 +79,32 @@ int main( void )
 		ADCconverted = ADC10MEM;
 
 		//Rotation count. Increments one per rotation regardless of clock cycle speed
-		if(ADCconverted >= 450){			//If magnet has passed increment rotation count
-		num++;
+		if(ADCconverted >= 800){			//If magnet has passed increment rotation count
+			++num;
 
-		if(num == 1){			//If its first pass reset timer
-			TA0R = 0;}
-		else{					//If its second pass record value on the timer register
-		timertimeytime = TA0R;
-		RPM = (int)calculate_time();		//Calculate time in seconds
-		num = 0;}								//Reset magnet pass count
-		while(!(ADCconverted <= 417 ))				//Hold code until magnet pass complete
-								{
-									ADC10CTL0 &= ~(ADC10SC);
-									ADC10CTL0 |= ENC + ADC10SC;
-									ADCconverted = ADC10MEM;
-								}
+			if(num == 1) {			//If its first pass reset timer
+				TA0R = 0;
+			} else{					//If its second pass record value on the timer register
+				timertimeytime = TA0R;
+				RPM = (int)calculate_time();		//Calculate time in seconds
+				num = 0;
+			}								//Reset magnet pass count
+			while(!(ADCconverted <= 700 ))				//Hold code until magnet pass complete
+			{
+				ADC10CTL0 &= ~(ADC10SC);
+				ADC10CTL0 |= ENC + ADC10SC;
+				__delay_cycles( 100 );
+				ADCconverted = ADC10MEM;
+			}
 
-		}
-		if ( betweenBytes == 0 ) {
-		        /*  !!!!!  BEGIN DANGER ZONE  !!!!!   */
-			/*sampleArray[ byteNum ] = ( pot >> 8 );
-			UCB0TXBUF = sampleArray[ byteNum ];
-			matchingLSB = byteNum + 1;
-			byteNum = (++byteNum) % 4;
-			sampleArray[ byteNum ] = ( pot & 0x00FF );
-			byteNum = (++byteNum) % 4;*/
-			/*  !!!!!  END DANGER ZONE   !!!!!   */
-		}
-		ADC10CTL0 &= ~(ADC10SC);
+			++numPulses;
+			}
+
+			if ( numPulses > 10 ) {
+				//do nothing
+			}
+
+			ADC10CTL0 &= ~(ADC10SC);
 	//delay(10000);
 	}
     while ( 1 );
