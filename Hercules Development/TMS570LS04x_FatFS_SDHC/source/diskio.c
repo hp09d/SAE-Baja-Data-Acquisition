@@ -11,10 +11,10 @@
 #include "gio.h"
 #include "mibspi.h"
 
-#define TG_1BYTE 2
-#define TG_6BYTE 3
-#define TG_64BYTE 4
-#define TG_DUMMYBYTES 5
+#define TG_1BYTE 3
+#define TG_6BYTE 4
+#define TG_64BYTE 5
+#define TG_DUMMYBYTES 6
 
 #define getByte() sendByte(0xFF)
 
@@ -114,7 +114,7 @@ uint16_t sendCmd(uint8_t cmd, uint32_t arg){
 	mibspiTransfer(mibspiREG1, TG_6BYTE);
 	while( !mibspiIsTransferComplete(mibspiREG1,TG_6BYTE) );
 
-	for(i = 0; i < 0xFFFF; ++i){
+	for(i = 0; i < 0x00FF; ++i){
 		if( !(resp & 0x80) ){
 			return resp;
 		}
@@ -273,10 +273,15 @@ DSTATUS disk_initialize (
 	spiTransmitData(spiREG1, &dataConfig1, 1, &cmd[0]); //Send an FF just cause*/
 	uint16_t status;
 
+	i = 0;
 	status = sendCmd(CMD0,0);
 	while(status != R1_IDLE_STATE){
 		//Wait for card to go idle
 		status = sendCmd(CMD0,0);
+		if( i > 1000 ){
+			return STA_NOINIT;
+		}
+		++i;
 	}
 
 	status = sendCmd(CMD8,0x1AA);
@@ -355,7 +360,7 @@ DRESULT disk_read (
 
 	while(count--){
 		if( rcv_block(buff) ){
-			break;
+			return RES_ERROR;
 		}
 		buff += 512;
 	}
@@ -398,7 +403,7 @@ DRESULT disk_write (
 		sendByte(WRITE_MULTIPLE_TOKEN);
 		while(count--){
 			if( xmit_block(buff) ){
-				break;
+				return RES_ERROR;
 			}
 			buff += 512;
 		}
