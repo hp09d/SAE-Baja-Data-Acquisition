@@ -4,6 +4,8 @@
 #include <msp430g2553.h>
 #include <stdio.h>
 #include <math.h>
+
+#define T_ACLK 12000
 /*
  * ======== Grace related declaration ========
  */
@@ -25,11 +27,9 @@ void SPI_Init( void )
 }
 
 /* Global data declaration/initialization */
-unsigned char SLV_data = 0x00;
 unsigned int ADCconverted;
 unsigned char data;
 int byteNum = 0;
-//char sampleArray[4];
 char betweenBytes = 0;
 char matchingLSB;
 int num = 0;
@@ -37,10 +37,15 @@ unsigned int timertimeytime = 0;
 double RPM;
 unsigned int numPulses = 0;
 unsigned char Const = 0x03;
+
+
 /* ====================================== */
-int cyclespersec = 12000; //@ 12kHz it takes 12000 cycles for one second
-	double end_time_value = 0;		//temp variable
-double calculate_time() //Calculate the RPM value using timertimeytime
+//int cyclespersec = 12000; //@ 12kHz it takes 12000 cycles for one second
+double end_time_value = 0;		//temp variable
+/*
+  Deleted to remove overhead from function calls
+ */
+/*double calculate_time() //Calculate the RPM value using timertimeytime
 {
 
 	//First convert to seconds
@@ -50,7 +55,7 @@ double calculate_time() //Calculate the RPM value using timertimeytime
 
 	end_time_value = round(end_time_value);
 	return end_time_value;
-}
+}*/
 
 
 int main( void )
@@ -84,12 +89,13 @@ int main( void )
 
 			if(num == 1) {			//If its first pass reset timer
 				TA0R = 0;
-			} else{					//If its second pass record value on the timer register
-				timertimeytime = TA0R;
-				RPM = (int)calculate_time();		//Calculate time in seconds
+			} else {					//If its second pass record value on the timer register
+				count = TA0R;
+				RPM = calculate_time();		//Calculate time in seconds
 				num = 0;
-			}								//Reset magnet pass count
-			while(!(ADCconverted <= 700 ))				//Hold code until magnet pass complete
+			} //Reset magnet pass count
+
+			while(!(ADCconverted <= 700 ))			// Wait for the falling edge
 			{
 				ADC10CTL0 &= ~(ADC10SC);
 				ADC10CTL0 |= ENC + ADC10SC;
@@ -103,9 +109,12 @@ int main( void )
 			if ( numPulses > 10 ) {
 				//do nothing
 			}
+			double number = 25.5;
+
+			int intNumber = (int)number;
+			++numPulses;
 
 			ADC10CTL0 &= ~(ADC10SC);
-	//delay(10000);
 	}
     while ( 1 );
     return ( 0 );
