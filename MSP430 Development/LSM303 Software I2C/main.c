@@ -7,8 +7,22 @@
  * main.c
  */
 
-#define SDA	10
-#define SCL	9
+//                      +-\/-+
+//               VCC   1|    |20  GND
+//         (A0)  P1.0  2|    |19  XIN
+//         (A1)  P1.1  3|    |18  XOUT
+//         (A2)  P1.2  4|    |17  TEST
+//         (A3)  P1.3  5|    |16  RST#
+//         (A4)  P1.4  6|    |15  P1.7  (A7) (SCL) (MISO) depends on chip
+//         (A5)  P1.5  7|    |14  P1.6  (A6) (SDA) (MOSI)
+//               P2.0  8|    |13  P2.5
+//               P2.1  9|    |12  P2.4
+//               P2.2 10|    |11  P2.3
+//                      +----+
+//
+
+#define SDA	3
+#define SCL	2
 
 void SPI_Init( void )
 {
@@ -30,7 +44,8 @@ int x,y,z;
 int main(void) {
 
     WDTCTL = WDTPW | WDTHOLD;	// Stop watchdog timer
-	char b = 0;
+    P1DIR |= BIT2;
+    P1OUT &= ~BIT2;
 
 	/* Initialize bit banging */
 	SPI_Init();
@@ -42,7 +57,9 @@ int main(void) {
 	UCB0TXBUF = 0xAE;
 	while( 1 ) {
 		if ( transferRequested ) {
+			__bic_SR_register( GIE );
 			ReadAccel( &x, &y, &z );
+			__bis_SR_register( GIE );
 		//if( !inTransfer ) {
 			//__bic_SR_register( GIE );
 		//	UCB0TXBUF = 0xAE;
@@ -63,26 +80,26 @@ int main(void) {
 __interrupt void USCI0RX_ISR_HOOK( void )
 {
 	static char byteCtr = 0;
-	if ( byteCtr == 0 && transferRequested == 0) {
-		//inTransfer = 1;
+	/*if ( byteCtr == 0 && transferRequested == 0) {
 		transferRequested = 1;
-	} else if ( byteCtr == 0 && accelReadComplete == 1 ) {
+		P1OUT |= BIT2;
+	} else*/
+	if ( byteCtr == 0 && accelReadComplete == 1 ) {
 		accelReadComplete = 0;
 		while ( !( IFG2 & UCB0RXIFG ) );
 		UCB0TXBUF = sample_buf[ byteCtr++ ];
+	} else if ( byteCtr == 0 && transferRequested == 0) {
+		transferRequested = 1;
+		P1OUT |= BIT2;
 	} else if ( byteCtr < 5 && byteCtr > 0 ) {
 		while ( !( IFG2 & UCB0RXIFG ) );
 		UCB0TXBUF = sample_buf[byteCtr++];
 	} else if ( byteCtr == 5 ) {
 		while( !(IFG2 & UCB0RXIFG) );
 		UCB0TXBUF = 0xAE;
+		P1OUT &= ~BIT2;
 		byteCtr = 0;
 	}
 
-	/*if ( byteCtr == 5 ) {
-		//while ( !( IFG2 & UCB0RXIFG ) );
-		//UCB0TXBUF = 0xAE;
-		inTransfer = byteCtr = transferRequested = 0;			//elegance
-	}*/
 	IFG2 &= ~UCB0RXIFG;
 }
