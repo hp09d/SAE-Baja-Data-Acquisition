@@ -5,10 +5,11 @@
 #include <stdio.h>
 #include <math.h>
 
-#define T_ACLK 12000
-#define CIRCUMFERENCE 72.2566
-#define IN_2_MILE 63360
-#define SECONDS_PER_HOUR 3600
+/* #defines used in calculation of speed in MPH */
+#define T_ACLK 12000			//ACLK default frequency = 12kHz
+#define CIRCUMFERENCE 72.2566		// pi * 23 inches
+#define IN_2_MILE 63360			//63360 inches in a mile
+#define SECONDS_PER_HOUR 3600		// 3600 seconds per hour
 
 void SPI_Init( void )
 {
@@ -27,32 +28,17 @@ unsigned int ADCconverted;
 unsigned int timer = 0;
 unsigned int count;
 int num;
+
+/* May need to change to double precision */
 float RPM;
 float time_in_seconds = 0;
 float rev_per_sec = 0;
 float rev_per_hour = 0;
 float speed = 0;
+
+/* UQ6.2 Fixed Point */
+/* 6 whole bits, 2 fractional bits */
 unsigned char fixed_point_speed;
-
-/* ====================================== */
-//int cyclespersec = 12000; //@ 12kHz it takes 12000 cycles for one second
-double end_time_value = 0;		//temp variable
-
-/*
-  Deleted to remove overhead from function calls
- */
-/*double calculate_time() //Calculate the RPM value using timertimeytime
-{
-
-	//First convert to seconds
-	end_time_value = (double)timertimeytime/(double)cyclespersec;	//seconds/rotation
-
-	end_time_value = 60/end_time_value;				//Rotations/Min
-
-	end_time_value = round(end_time_value);
-	return end_time_value;
-}*/
-
 
 int main( void )
 {
@@ -61,13 +47,12 @@ int main( void )
 	P1SEL |= BIT0;							//Enable A/D Channel A0 (P1.0)
 	ADC10CTL0 &= ~ENC;
 	ADC10CTL0 = SREF_1 + REF2_5V + REFON + ADC10ON;
-    ADC10CTL1 = ADC10DIV_3 + INCH_0 + SHS_0 + CONSEQ_2 + ADC10SSEL_2;
+        ADC10CTL1 = ADC10DIV_3 + INCH_0 + SHS_0 + CONSEQ_2 + ADC10SSEL_2;
 
 
     //Initialize Timer0_A
-    TA0CCR0 = 65535;					//TO DO: Change the timer to be able to count beyond 5 seconds
-    									//maybe do tops 30 seconds and anything beyond that gets an automatic 1 RPM?
-    TA0CTL |= TASSEL_1 + MC_1 + TAIE; 	//ACLK @ 12kHZ and sets up count mode
+	TA0CCR0 = 65535;					
+    	TA0CTL |= TASSEL_1 + MC_1 + TAIE; 	//ACLK @ 12kHZ and sets up count mode
 
 
 	while ( 1 ) {
@@ -83,34 +68,36 @@ int main( void )
 			} else {					//If its second pass record value on the timer register
 				count = TA0R - 55671;
 				TA0R = 0;
-				time_in_seconds = (float)count / T_ACLK;
-				rev_per_sec = (float)1 / time_in_seconds;
-				rev_per_hour = rev_per_sec * SECONDS_PER_HOUR;
-				speed = ( rev_per_hour * CIRCUMFERENCE ) / IN_2_MILE;
-				fixed_point_speed = speed;
-				fixed_point_speed <<= 2;
-				speed -= floor(speed);
+				time_in_seconds = (float)count / T_ACLK;		// count / counts/s = s/rev
+				rev_per_sec = (float)1 / time_in_seconds; 
+				rev_per_hour = rev_per_sec * SECONDS_PER_HOUR;		// change rev/s to rev/hr
+				speed = ( rev_per_hour * CIRCUMFERENCE ) / IN_2_MILE;	// RPH to MPH
+				fixed_point_speed = speed;				// truncate
+				fixed_point_speed <<= 2;				// shift left 2 to clear fractional bits
+				speed -= floor(speed);					// subtract off whole part
 
 				if ( speed >= 0.5 ) {
-					fixed_point_speed |= BIT1;
-				    speed -= 0.5;
+					fixed_point_speed |= BIT1;			//set 1st fractional bit
+					 speed -= 0.5;					
 				}
-				if ( speed >= 0.25 ) {
-					fixed_point_speed |= BIT0;
+				if ( speed >= 0.25 ) {	
+					fixed_point_speed |= BIT0;			//set 2nd fractional bit
 				}
 				while ( !(IFG2 & UCB0TXIFG) );
+				// fill transmit buffer - done in main code to remove interrupts
 				UCB0TXBUF = fixed_point_speed;
 				num = 0;
 				TA0R = 55671;
-			} //Reset magnet pass count
-
-			while(!(ADCconverted <= 700 ))			// Wait for the falling edge
+			}
+			// Wait for falling edge
+			while(!(ADCconverted <= 700 ))
 			{
 				ADC10CTL0 &= ~(ADC10SC);
 				ADC10CTL0 |= ENC + ADC10SC;
-				__delay_cycles( 100 );
+				__delay_cycles( 100 );		//may not be necessary?
 				ADCconverted = ADC10MEM;
 			}
+			
 			if ( num == 0 ) TA0R = 55671;
 
 		}
@@ -121,6 +108,7 @@ int main( void )
     return ( 0 );
 }
 
+/* TO DO: Remove */
 #pragma vector=USCIAB0RX_VECTOR
 __interrupt void USCI0RX_ISR_HOOK (void)
 {
@@ -132,6 +120,8 @@ __interrupt void USCI0RX_ISR_HOOK (void)
 	__delay_cycles(50);
 }
 
+/* Handles time-out. Sets transmit buffer to 0 and resets pulse count
+   to wait for pulse in the pair */
 #pragma VECTOR=TIMERA0_VECTOR
 __interrupt void Timer_A( void )
 {
