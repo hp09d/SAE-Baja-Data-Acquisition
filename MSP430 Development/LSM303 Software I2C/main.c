@@ -22,7 +22,7 @@
 //
 
 #define SDA	3
-#define SCL	2
+#define SCL	4
 
 void SPI_Init( void )
 {
@@ -37,6 +37,42 @@ void SPI_Init( void )
 	__bis_SR_register( GIE );
 }
 
+void Clock_Init( void )
+{
+	BCSCTL2 = SELM_0 | DIVM_0 | DIVS_0;
+	if (CALBC1_16MHZ != 0xFF) {
+		/* Adjust this accordingly to your VCC rise time */
+		__delay_cycles(100000);
+
+		/* Follow recommended flow. First, clear all DCOx and MODx bits. Then
+		 * apply new RSELx values. Finally, apply new DCOx and MODx bit values.
+		 */
+		DCOCTL = 0x00;
+		BCSCTL1 = CALBC1_16MHZ;     /* Set DCO to 16MHz */
+		DCOCTL = CALDCO_16MHZ;
+	}
+
+	/*
+	 * Basic Clock System Control 1
+	 *
+	 * XT2OFF -- Disable XT2CLK
+	 * ~XTS -- Low Frequency
+	 * DIVA_0 -- Divide by 1
+	 *
+	 * Note: ~XTS indicates that XTS has value zero
+	 */
+	BCSCTL1 |= XT2OFF | DIVA_0;
+
+	/*
+	 * Basic Clock System Control 3
+	 *
+	 * XT2S_0 -- 0.4 - 1 MHz
+	 * LFXT1S_2 -- If XTS = 0, XT1 = VLOCLK ; If XTS = 1, XT1 = 3 - 16-MHz crystal or resonator
+	 * XCAP_1 -- ~6 pF
+	 */
+	BCSCTL3 = XT2S_0 | LFXT1S_2 | XCAP_1;
+}
+
 unsigned char sample_buf[5] = { 0xBB, 0x00, 0x00, 0x00, 0x00 };
 unsigned char transferRequested = 0, accelReadComplete = 0;
 int x,y,z;
@@ -44,17 +80,16 @@ int x,y,z;
 int main(void) {
 
     WDTCTL = WDTPW | WDTHOLD;	// Stop watchdog timer
-    P1DIR |= BIT2;
-    P1OUT &= ~BIT2;
 
 	/* Initialize bit banging */
-	SPI_Init();
+	SPI_Init( );
+	Clock_Init( );
 	SoftwareWireInit( SDA, SCL );
 	begin( );
 
 	/* LSM303 code */
 	EnableDefault( );
-	UCB0TXBUF = 0xAE;
+	//UCB0TXBUF = 0xAE;
 	while( 1 ) {
 		if ( transferRequested ) {
 			__bic_SR_register( GIE );
@@ -90,14 +125,12 @@ __interrupt void USCI0RX_ISR_HOOK( void )
 		UCB0TXBUF = sample_buf[ byteCtr++ ];
 	} else if ( byteCtr == 0 && transferRequested == 0) {
 		transferRequested = 1;
-		P1OUT |= BIT2;
 	} else if ( byteCtr < 5 && byteCtr > 0 ) {
 		while ( !( IFG2 & UCB0RXIFG ) );
 		UCB0TXBUF = sample_buf[byteCtr++];
 	} else if ( byteCtr == 5 ) {
 		while( !(IFG2 & UCB0RXIFG) );
 		UCB0TXBUF = 0xAE;
-		P1OUT &= ~BIT2;
 		byteCtr = 0;
 	}
 

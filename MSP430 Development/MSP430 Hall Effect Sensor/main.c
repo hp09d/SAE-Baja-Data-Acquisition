@@ -13,14 +13,50 @@
 
 void SPI_Init( void )
 {
-P1SEL |= BIT0 | BIT4 | BIT5 | BIT6 | BIT7;
-P1SEL2 |= BIT4 | BIT5 | BIT6 | BIT7;
+	P1SEL |= BIT0 | BIT4 | BIT5 | BIT6 | BIT7;
+	P1SEL2 |= BIT4 | BIT5 | BIT6 | BIT7;
 
-UCB0CTL1 |= UCSWRST;
-UCB0CTL0 = UCCKPL | UCMSB | UCSYNC | UCMODE_2;
-UCB0CTL1 &= ~UCSWRST;
-//IE2 |= UCB0RXIE;
-__bis_SR_register(GIE);
+	UCB0CTL1 |= UCSWRST;
+	UCB0CTL0 = UCCKPL | UCMSB | UCSYNC | UCMODE_2;
+	UCB0CTL1 &= ~UCSWRST;
+	//IE2 |= UCB0RXIE;
+	__bis_SR_register(GIE);
+}
+
+void Clock_Init( void )
+{
+	BCSCTL2 = SELM_0 | DIVM_0 | DIVS_0;
+	if (CALBC1_16MHZ != 0xFF) {
+		/* Adjust this accordingly to your VCC rise time */
+		__delay_cycles(100000);
+
+		/* Follow recommended flow. First, clear all DCOx and MODx bits. Then
+		 * apply new RSELx values. Finally, apply new DCOx and MODx bit values.
+		 */
+		DCOCTL = 0x00;
+		BCSCTL1 = CALBC1_16MHZ;     /* Set DCO to 16MHz */
+		DCOCTL = CALDCO_16MHZ;
+	}
+
+	/*
+	 * Basic Clock System Control 1
+	 *
+	 * XT2OFF -- Disable XT2CLK
+	 * ~XTS -- Low Frequency
+	 * DIVA_0 -- Divide by 1
+	 *
+	 * Note: ~XTS indicates that XTS has value zero
+	 */
+	BCSCTL1 |= XT2OFF | DIVA_0;
+
+	/*
+	 * Basic Clock System Control 3
+	 *
+	 * XT2S_0 -- 0.4 - 1 MHz
+	 * LFXT1S_2 -- If XTS = 0, XT1 = VLOCLK ; If XTS = 1, XT1 = 3 - 16-MHz crystal or resonator
+	 * XCAP_1 -- ~6 pF
+	 */
+	BCSCTL3 = XT2S_0 | LFXT1S_2 | XCAP_1;
 }
 
 /* Global data declaration/initialization */
@@ -45,14 +81,20 @@ int main( void )
 	//BCSCTL1 = CALBC1_16MHZ;
 	//DCOCTL = CALDCO_16MHZ;
 	SPI_Init();
+
+    Clock_Init();
+
 	P1SEL |= BIT0;							//Enable A/D Channel A0 (P1.0)
 	ADC10CTL0 &= ~ENC;
 	ADC10CTL0 = SREF_1 + REF2_5V + REFON + ADC10ON;
 	ADC10CTL1 = ADC10DIV_3 + INCH_0 + SHS_0 + CONSEQ_2 + ADC10SSEL_2;
+	P2DIR |= BIT0;
+	P2OUT &= ~BIT0;
 
 	//Initialize Timer0_A
 	TA0CCR0 = 65535;					
 	TA0CTL = TASSEL_1 | ID_0 | MC_1 | TAIE; 	//ACLK @ 12kHZ and sets up count mode
+	TA0R = 0;
 
 	while ( 1 ) {
 		ADC10CTL0 |= ENC + ADC10SC;
@@ -85,6 +127,7 @@ int main( void )
 				}
 				//while ( !(IFG2 & UCB0TXIFG) );
 				// fill transmit buffer - done in main code to remove interrupts
+
 				UCB0TXBUF = fixed_point_speed;
 				num = 0;
 				TA0R = 55671;
@@ -92,10 +135,10 @@ int main( void )
 			// Wait for falling edge
 			while(!(ADCconverted <= 700 ))
 			{
-			ADC10CTL0 &= ~(ADC10SC);
-			ADC10CTL0 |= ENC + ADC10SC;
-			//__delay_cycles( 100 );		//may not be necessary?
-			ADCconverted = ADC10MEM;
+				ADC10CTL0 &= ~(ADC10SC);
+				ADC10CTL0 |= ENC + ADC10SC;
+				//__delay_cycles( 100 );		//may not be necessary?
+				ADCconverted = ADC10MEM;
 			}
 
 			if ( num == 0 ) TA0R = 55671;
@@ -125,6 +168,7 @@ to wait for pulse in the pair */
 #pragma vector=TIMER0_A1_VECTOR
 __interrupt void TIMER0_A1_ISR_HOOK(void)
 {
+	P2OUT ^= BIT0;
 	UCB0TXBUF = 0;
 	num = 0;
 	TA0CTL &= ~TAIFG;
