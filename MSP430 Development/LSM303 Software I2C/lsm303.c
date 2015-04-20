@@ -47,6 +47,26 @@ char ReadMagReg ( char reg )
 	return value;
 }
 
+void ReadAccelXY (int* x, int* y)
+{
+	beginTransmission( ACCEL_ADDRESS_READ );
+	writebyte( LSM303DLH_OUT_X_L_A | (1 << 7) );
+	endTransmission();
+	requestFrom( ACCEL_ADDRESS_READ, 4 );
+
+	while( available() < 4 );
+
+	char _x[2] = {0, 0}, _y[2] = {0, 0};
+
+	_x[0] = read();
+	_x[1] = read();
+	_y[0] = read();
+	_y[1] = read();
+
+	*x = _x[0] | ( _x[1] << 8 );
+	*y = _y[0] | ( _y[1] << 8 );
+}
+
 void ReadAccel ( int* x, int* y, int* z )
 {
 	beginTransmission( ACCEL_ADDRESS_READ );

@@ -54,6 +54,7 @@ void WriteAccelReg( char reg, char value );
 char ReadAccelReg( char reg );
 char RedMagReg( char reg );
 void ReadAccel( int* x, int* y, int* z );
+void ReadAccelXY( int* x, int* y);
 void ReadMag( int* xm, int* ym, int* zm );
 void Read( int* x, int* y, int* z, int* xm, int* ym, int* zm );
 
