@@ -12,7 +12,7 @@
 #include "gio.h"
 #include "ff.h"
 
-#define ILI9340_DC 5		//GPIO pins for display functions
+#define ILI9340_DC 6		//GPIO pins for display functions
 #define ILI9340_RST 7
 
 #define ILI9340_8BIT_TG 0				//mibSPI transfer group for transmitting 8 bit data

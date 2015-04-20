@@ -6,8 +6,8 @@ uint16_t ili9340PixBuf[ILI9340_MULTI_SIZE];
 uint16_t ili9340Busy = 0;
 
 void ili9340Init(){
-	mibspiInit();
-	gioInit();
+	//mibspiInit();
+	//gioInit();
 
 	ili9340Busy = 1;
 
