@@ -43,7 +43,9 @@
 
 
 /* USER CODE BEGIN (0) */
-#define SLAVE_DELAY 500
+#define SLAVE_DELAY 300
+
+#define FUEL_LIFE 3600
 
 //Status Bits
 #define SDStatus 0x80			//SD Card Error
@@ -80,7 +82,7 @@
 
 /* USER CODE BEGIN (2) */
 uint8_t preamble[3] = {0xBA,0xDA,0x55};
-uint8_t sciTX[6] = {0xBA,0xDA,0x55,0,0,0};
+uint8_t sciTX[7] = {0xBA,0xDA,0x55,0,0,0,0};
 char potStr[3];
 uint8_t sciBuffer;
 uint8_t gotPreamble = 0;
@@ -89,6 +91,7 @@ uint8_t clrErr = 0;
 uint8_t writeLog = 0;
 
 uint32_t TIME = 0;
+uint16_t FUEL = FUEL_LIFE;
 
 typedef uint8_t herc_status_t;
 
@@ -100,7 +103,15 @@ uint8_t requestAccel();
 uint8_t getAccel( uint16_t * x, uint16_t * y );
 
 void filterAccel( uint16_t X, uint16_t Y );
-uint16_t accel_samples = 0;
+void filterSpeed( uint16_t speed );
+
+uint16_t getSpeed();
+uint16_t samples = 0;
+
+uint32_t speed_total = 0;
+uint16_t speed_average = 0;
+uint16_t speed_min = 0;
+uint16_t speed_max = 0;
 
 uint32_t accel_total_X = 0;
 uint16_t accel_average_X = 0;
@@ -121,9 +132,12 @@ void main(void)
 {
 /* USER CODE BEGIN (3) */
 	sciInit();
-	spiInit();
-	rtiInit();
 	gioInit();
+	gioPORTA->DIR |= 3;
+	gioPORTA->DOUT |= 3;
+	rtiInit();
+	spiInit();
+	mibspiInit();
 	ili9340Init();
 	ili9340FillRect(0,0,320,240,0xFFFF);
 
@@ -132,12 +146,44 @@ void main(void)
 
 	sciReceive(scilinREG,1,&sciBuffer);
 
+	uint32_t i = 0;
+
+	FRESULT RES;
+
+	ili9340FillRect(0,0,320,240,0xFFFF);
+
+	RES = f_mount(&fs,"",1);
+	if(RES == FR_OK){
+		RES = f_open( &file, "COE.raw", FA_READ | FA_OPEN_EXISTING );
+
+		if(RES == FR_OK){
+			ili9340DrawFile(&file,240,240);
+
+			for( i = 0; i < 16000000; ++i );
+
+			RES = f_open( &file, "SAE.raw", FA_READ | FA_OPEN_EXISTING );
+			if(RES == FR_OK){
+				ili9340FillRect(0,0,320,21,0xFFFF);
+				ili9340DrawFile(&file,320,198);
+				ili9340FillRect(0,219,320,21,0xFFFF);
+			}else{
+				ili9340Write(10,40,2,(char *) "File Open Error",0xF800);
+				STATUS |= SDStatus;
+			}
+
+			for( i = 0; i < 16000000; ++i );
+		}else{
+			ili9340Write(10,40,2,(char *) "File Open Error",0xF800);
+			STATUS |= SDStatus;
+		}
+	}else{
+		ili9340Write(10,10,2,(char *) "FS Mount Error",0xF800);
+		STATUS |= SDStatus;
+	}
+
 	_enable_IRQ();
 
 	rtiStartCounter(rtiCOUNTER_BLOCK1);
-
-	FRESULT RES;
-	RES = f_mount(&fs,"",1);
 
 	if(RES == FR_OK){
 		RES = f_open( &file, "display.raw", FA_READ | FA_OPEN_EXISTING );
@@ -148,25 +194,24 @@ void main(void)
 			ili9340Write(10,40,2,(char *) "File Open Error",0xF800);
 			STATUS |= SDStatus;
 		}
-	}else{
-		ili9340Write(10,10,2,(char *) "FS Mount Error",0xF800);
-		STATUS |= SDStatus;
 	}
 
-	gioPORTA->DIR |= (1 << 3);
+	//gioPORTA->DIR |= (1 << 3);
 	gioPORTA->DIR &= ~(1 << 4);
-	gioPORTA->DOUT |= (1 << 3);
+	//gioPORTA->DOUT |= (1 << 3);
 
-    uint8_t hold = 0;
+    uint16_t hold = 0;
     uint8_t sensErr = 0;
-	uint16_t accelX, accelY = 0;
+	uint16_t accelX, accelY, speed = 0;
 	char sdBuf[100];
 	uint32_t bw;
 
 	sensErr = requestAccel();
+	for( bw = 0; bw < 10000; ++bw );
 
 	while(1){
 		sensErr |= getAccel( &accelX, &accelY );
+		for( bw = 0; bw < 1000; ++bw );
 		sensErr |= requestAccel();
 		if( sensErr > 0 ){
 			STATUS |= SlvStatus;
@@ -175,25 +220,39 @@ void main(void)
 			STATUS &= ~(SlvStatus);
 			accelX += 0x8000;
 			accelY += 0x8000;
+			speed = getSpeed();
+
+			if( ( samples > 10 && (STATUS & LogStatus) == 0 ) || samples == 0 ){
+				//Reset stats
+				samples = 0;
+				accel_min_X = accel_max_X = accelX;
+				accel_min_Y = accel_max_Y = accelY;
+				accel_total_X = 0;
+				accel_total_Y = 0;
+				speed_min = speed_max = speed;
+				speed_total = 0;
+			}
+			samples++;
+
 			filterAccel( accelX, accelY );
-			drawProgress( accelX );
-			accelY = (uint32_t)( accelY * 99 ) / 0xFFFF;
+			//drawProgress( accelX );
+			filterSpeed( speed );
+			speed >>= 2;
+
 			rtiDisableNotification(rtiNOTIFICATION_COMPARE0);
-			sciTX[4] = accelX >> 8;
-			sciTX[5] = (uint8_t)accelY;
+			sciTX[4] = (uint16_t)( (uint32_t)(FUEL*255)/FUEL_LIFE );
+			sciTX[5] = speed;
+			sciTX[6] = accelX >> 8;
 			rtiEnableNotification(rtiNOTIFICATION_COMPARE0);
-			sprintf(&potStr[0],"%2d",accelY);
+			sprintf(&potStr[0],"%2d",speed);
 			ili9340WriteFill(75,45,13,&potStr[0],0xFFFF,0x528A);
 
 			if( writeLog ){
-				sprintf( &sdBuf[0], "%d,%d,%d,%d,%d,", TIME>>1, accel_samples, accel_min_X, accel_max_X, accel_average_X);
-				RES = f_write(&file, &sdBuf[0], strlen( &sdBuf[0] ), &bw);
-				if( RES != FR_OK ){
-					STATUS &= ~LogStatus;	//Stop Logging
-					STATUS |= SDStatus;		//Set SD Error Flag
-				}
-
-				sprintf( &sdBuf[0], "%d,%d,%d\n", accel_min_Y, accel_max_Y, accel_average_Y);
+				sprintf( &sdBuf[0], "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+						TIME>>1, samples, accel_min_X, accel_max_X, accel_average_X,
+						accel_min_Y, accel_max_Y, accel_average_Y,
+						speed_min, speed_max, speed_average,
+						FUEL );
 				RES = f_write(&file, &sdBuf[0], strlen( &sdBuf[0] ), &bw);
 				if( RES != FR_OK ){
 					STATUS &= ~LogStatus;	//Stop Logging
@@ -201,24 +260,44 @@ void main(void)
 				}
 
 				//Reset sample filtering
-				accel_samples = 0;
+				samples = 0;
 				writeLog = 0;
 			}
 		}
 		if( dispErr ){
-			ili9340FillRect(83,184,163,38,0xF800);
-			ili9340Write(100,192,3,(char *) "Error",0xFFFF);
+			ili9340FillRect(83,184,81,38,0xF800);
+			ili9340Write(110,189,4,(char *) "P",0xFFFF);
 			dispErr = 0;
 		}else if( clrErr ){
-			ili9340FillRect(83,184,163,38,0x07E0);
+			ili9340FillRect(83,184,81,38,0x07E0);
 			clrErr = 0;
 		}
+		drawProgress(FUEL);
 		if( ((gioPORTA->DIN) & 0x10) == 0x00 ){
-			if( hold == 0 ){
-				STATUS ^= DriverNot;
-				hold = 1;
+			hold++;
+			if(hold == 50){
+				FUEL = FUEL_LIFE;
+				/*STATUS ^= LogStatus;
+				if( (STATUS & LogStatus) == LogStatus ){
+					//Logging
+					ili9340FillRect(164,184,82,38,0xFB40);
+					ili9340Write(191,189,4,(char *) "L",0xFFFF);
+				}else{
+					ili9340FillRect(164,184,82,38,0x07E0);
+				}*/
 			}
 		}else{
+			if( hold > 0 && hold < 50 ){
+				//FUEL = FUEL_LIFE;
+				STATUS ^= DriverNot;;
+				if( (STATUS & DriverNot) == DriverNot ){
+					//Set Notification
+					ili9340FillRect(164,184,82,38,0xFB40);
+					ili9340Write(191,189,4,(char *) "D",0xFFFF);
+				}else{
+					ili9340FillRect(164,184,82,38,0x07E0);
+				}
+			}
 			hold = 0;
 		}
 	}
@@ -263,7 +342,7 @@ void sciNotification(sciBASE_t *sci, uint32 flags){
 							if( RES != FR_OK ){
 								STATUS |= SDStatus;
 							}else{
-								RES = f_write( &file, (char *)"\nTIME,N,X Min,X Max,X Avg,Y Min,Y Max,Y Avg\n", 44, &bw);
+								RES = f_write( &file, (char *)"\nTIME,N,X Min,X Max,X Avg,Y Min,Y Max,Y Avg, Speed Min, Speed Max, Speed Avg, Fuel Time\n", 88, &bw);
 								if( RES != FR_OK ){
 									STATUS |= SDStatus;
 								}
@@ -271,6 +350,8 @@ void sciNotification(sciBASE_t *sci, uint32 flags){
 							STATUS |= LogStatus;
 						}
 					}
+				}else if( buf[0] == 'r' && buf[1] == 'f' ){
+					FUEL = FUEL_LIFE;
 				}else{
 					//Not recognized
 				}
@@ -288,13 +369,21 @@ void sciNotification(sciBASE_t *sci, uint32 flags){
 
 void rtiNotification(uint32 notification){
 	sciTX[3] = STATUS;
-	sciSend(scilinREG,6,&sciTX[0]);
+	sciSend(scilinREG,7,&sciTX[0]);
 
-	if( ( (STATUS & LogStatus) == LogStatus ) && TIME % 2 == 0 ){
-		writeLog = 1;
+	if( TIME % 2 == 0 ){
+		if( FUEL > 1 ){
+			FUEL -= 1;
+		}else{
+			FUEL = 0;
+		}
+		if( (STATUS & LogStatus) == LogStatus ){
+			writeLog = 1;
+		}
 	}
 
 	TIME++;
+
 }
 
 uint8_t getPreamble(uint8_t val){
@@ -322,19 +411,19 @@ void drawProgress(uint16_t new){
 
 	if(new > old){
 		//Draw Yellow
-		y0 = 188-((new*177)/65535);
-		height = (178*(new-old))/65535;
+		y0 = 188-((new*177)/FUEL_LIFE);
+		height = (178*(new-old))/FUEL_LIFE;
 		if( y0+height > 188){
 			height = 188-y0;
 		}
 		ili9340FillRect(12,y0,31,height+1,0xFF70);
 	}else{
 		//Draw Black
-		y0 = 186-((old*177)/65535);
+		y0 = 185-((old*177)/FUEL_LIFE);
 		if( y0 < 11 ){
 			y0 = 11;
 		}
-		height = 1+(178*(old-new))/65535;
+		height = 1+(178*(old-new))/FUEL_LIFE;
 		if( y0+height > 188){
 			height = 188-y0;
 		}
@@ -353,23 +442,39 @@ uint8_t requestAccel(){
     dataConfig1.DFSEL = SPI_FMT_1;
     dataConfig1.WDEL = 1;
 
-    uint16_t src, dst = 0x00;
+    uint16_t src = 0xFF;
+    uint16_t dst = 0x00;
     int i=0;
     int j=0;
 
-    gioPORTA->DIR |= (1 << 6);
-
 	while( dst != 0xAE ){		//Get past busy data
-		gioPORTA->DOUT &= ~(1 << 6);
 		for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT &= ~(1 << 0);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
 		spiTransmitAndReceiveData(spiREG2, &dataConfig1,1,&src,&dst);
-		gioPORTA->DOUT |= (1 << 6);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT |= (1 << 0);
 		++j;
-		if( j > 1000 ){
+		if( dst == 0x5D ){
+			//Fix phase
+			dataConfig1.DFSEL = SPI_FMT_2;
+			for(i = 0; i < 7; ++i){
+				for( i = 0; i < SLAVE_DELAY; ++i );
+				gioPORTA->DOUT &= ~(1 << 0);
+				spiTransmitAndReceiveData(spiREG2, &dataConfig1,1,&src,&dst);
+				gioPORTA->DOUT |= (1 << 0);
+			}
+			if( dst == 0xAE ){
+				return 0;
+			}
+		}
+		if( j > 100 ){
+			//gioPORTA->DIR |= (1 << 0);
 			return 1;
 		}
 	}
 
+	//gioPORTA->DIR |= (1 << 0);
 	return 0;
 }
 
@@ -380,79 +485,82 @@ uint8_t getAccel( uint16_t * x, uint16_t * y ){
     dataConfig1.DFSEL = SPI_FMT_1;
     dataConfig1.WDEL = 1;
 
-    uint16_t src, dst = 0xAE;
+    uint16_t src = 0xFF;
+    uint16_t dst = 0xAE;
     uint16_t X, Y;
     int i=0;
     int j=0;
 
-    gioPORTA->DIR |= (1 << 6);
+    gioPORTA->DOUT &= ~(1 << 0);
+
 	while( dst == 0xAE ){		//Get past busy data
-		gioPORTA->DOUT &= ~(1 << 6);
 		for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT &= ~(1 << 0);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
 		spiTransmitAndReceiveData(spiREG2, &dataConfig1,1,&src,&dst);
-		gioPORTA->DOUT |= (1 << 6);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT |= (1 << 0);
 		++j;
-		if( j > 1000 ){
+		if( j > 100 ){
+			gioPORTA->DOUT |= (1 << 0);
 			return 1;
 		}
 	}
 	if( dst == 0xBB ){			//Start code
 		j = 0;
 		while( dst == 0xBB ){
-			gioPORTA->DOUT &= ~(1 << 6);
 			for( i = 0; i < SLAVE_DELAY; ++i );
+			gioPORTA->DOUT &= ~(1 << 0);
+			//for( i = 0; i < SLAVE_DELAY; ++i );
 			spiTransmitAndReceiveData(spiREG2, &dataConfig1,1,&src,&dst);
-			gioPORTA->DOUT |= (1 << 6);
+			//for( i = 0; i < SLAVE_DELAY; ++i );
+			gioPORTA->DOUT |= (1 << 0);
 			++j;
-			if( j > 1000 ){
+			if( j > 100 ){
+				gioPORTA->DOUT |= (1 << 0);
 				return 1;
 			}
 		}
 		X = dst << 8;
 
-		gioPORTA->DOUT &= ~(1 << 6);
 		for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT &= ~(1 << 0);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
 		spiTransmitAndReceiveData(spiREG2, &dataConfig1,1,&src,&dst);
-		gioPORTA->DOUT |= (1 << 6);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT |= (1 << 0);
 		X = X | dst;
 
-		gioPORTA->DOUT &= ~(1 << 6);
 		for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT &= ~(1 << 0);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
 		spiTransmitAndReceiveData(spiREG2, &dataConfig1,1,&src,&dst);
-		gioPORTA->DOUT |= (1 << 6);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT |= (1 << 0);
 		Y = dst << 8;
 
-		gioPORTA->DOUT &= ~(1 << 6);
 		for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT &= ~(1 << 0);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
 		spiTransmitAndReceiveData(spiREG2, &dataConfig1,1,&src,&dst);
-		gioPORTA->DOUT |= (1 << 6);
+		//for( i = 0; i < SLAVE_DELAY; ++i );
+		gioPORTA->DOUT |= (1 << 0);
 		Y = Y | dst;
 	}
 
 	*x = X;
 	*y = Y;
-
+	//gioPORTA->DOUT |= (1 << 0);
 	return 0;
 }
 
 void filterAccel( uint16_t X, uint16_t Y ){
-	if( accel_samples == 0 ){
-		accel_min_X = accel_max_X = X;
-		accel_min_Y = accel_max_Y = Y;
-		accel_total_X = 0;
-		accel_total_Y = 0;
-	}else if( accel_samples > 10 && (STATUS & LogStatus) == 0 ){
-		accel_samples = 0;
-		accel_min_X = accel_max_X = X;
-		accel_min_Y = accel_max_Y = Y;
-		accel_total_X = 0;
-		accel_total_Y = 0;
+	if( samples == 0 ){
+
 	}
 
-	accel_samples++;
-
 	accel_total_X += X;
-	accel_average_X = accel_total_X/accel_samples;
+	accel_average_X = accel_total_X/samples;
 
 	if( X < accel_min_X ){
 		accel_min_X = X;
@@ -463,7 +571,7 @@ void filterAccel( uint16_t X, uint16_t Y ){
 	}
 
 	accel_total_Y += Y;
-	accel_average_Y = accel_total_Y/accel_samples;
+	accel_average_Y = accel_total_Y/samples;
 
 	if( Y < accel_min_Y ){
 		accel_min_Y = Y;
@@ -472,6 +580,38 @@ void filterAccel( uint16_t X, uint16_t Y ){
 	if( Y > accel_max_Y ){
 		accel_max_Y = Y;
 	}
+}
+
+void filterSpeed( uint16_t speed ){
+	if( samples == 0 ){
+
+	}
+
+	speed_total += speed;
+	speed_average = speed_total/samples;
+
+	if( speed < speed_min ){
+		speed_min = speed;
+	}
+
+	if( speed > speed_max ){
+		speed_max = speed;
+	}
+}
+
+uint16_t getSpeed(){
+	spiDAT1_t dataConfig1;
+    dataConfig1.CSNR = 0xFF;
+    dataConfig1.CS_HOLD = 0;
+    dataConfig1.DFSEL = SPI_FMT_1;
+    dataConfig1.WDEL = 1;
+
+    uint16_t src = 0xFF;
+    uint16_t dst = 0;
+    gioPORTA->DOUT &= ~(1 << 1);
+    spiTransmitAndReceiveData(spiREG2, &dataConfig1,1,&src,&dst);
+    gioPORTA->DOUT |= (1 << 1);
+    return dst;
 }
 
 
